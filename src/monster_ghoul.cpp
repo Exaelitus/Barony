@@ -18,242 +18,264 @@
 #include "sound.hpp"
 #include "net.hpp"
 #include "collision.hpp"
+#include "player.hpp"
 
-void initGhoul(Entity *my, Stat *myStats) {
+void initGhoul(Entity* my, Stat* myStats)
+{
 	int c;
-	node_t *node;
+	node_t* node;
 
-	my->sprite = 246;
+	my->initMonster(246);
 
-	my->flags[UPDATENEEDED]=TRUE;
-	my->flags[BLOCKSIGHT]=TRUE;
-	my->flags[INVISIBLE]=FALSE;
-
-	if( multiplayer != CLIENT ) {
+	if ( multiplayer != CLIENT )
+	{
 		MONSTER_SPOTSND = 142;
 		MONSTER_SPOTVAR = 3;
 		MONSTER_IDLESND = 146;
 		MONSTER_IDLEVAR = 3;
 	}
-	if( multiplayer != CLIENT && !MONSTER_INIT ) {
-		myStats->sex = static_cast<sex_t>(rand()%2);
-		myStats->appearance = rand();
-		myStats->inventory.first = NULL;
-		myStats->inventory.last = NULL;
-		myStats->HP = 90; myStats->MAXHP = 90;
-		myStats->MP = 10; myStats->MAXMP = 10;
-		myStats->OLDHP = myStats->HP;
-		myStats->STR = 8;
-		myStats->DEX = -3;
-		myStats->CON = -1;
-		myStats->INT = -2;
-		myStats->PER = -1;
-		myStats->CHR = -5;
-		myStats->EXP = 0;
-		myStats->LVL = 7;
-		myStats->GOLD = 0;
-		myStats->HUNGER = 900;
-		if( !myStats->leader_uid )
-			myStats->leader_uid = 0;
-		myStats->FOLLOWERS.first=NULL; myStats->FOLLOWERS.last=NULL;
-		for( c=0; c<std::max(NUMPROFICIENCIES,NUMEFFECTS); c++ ) {
-			if( c<NUMPROFICIENCIES )
-				myStats->PROFICIENCIES[c]=0;
-			if( c<NUMEFFECTS )
-				myStats->EFFECTS[c]=FALSE;
-			if( c<NUMEFFECTS )
-				myStats->EFFECTS_TIMERS[c]=0;
-		}
-		myStats->helmet = NULL;
-		myStats->breastplate = NULL;
-		myStats->gloves = NULL;
-		myStats->shoes = NULL;
-		myStats->shield = NULL;
-		myStats->weapon = NULL;
-		myStats->cloak = NULL;
-		myStats->amulet = NULL;
-		myStats->ring = NULL;
-		myStats->mask = NULL;
-		if( rand()%50 || my->flags[USERFLAG2] ) {
-			strcpy(myStats->name,"");
-		} else {
-			strcpy(myStats->name,"Coral Grimes");
-			for( c=0; c<3; c++ ) {
-				Entity *entity = summonMonster(GHOUL,my->x,my->y);
-				if( entity )
-					entity->parent = my->uid;
+	if ( multiplayer != CLIENT && !MONSTER_INIT )
+	{
+		if ( myStats != nullptr )
+		{
+			if ( !myStats->leader_uid )
+			{
+				myStats->leader_uid = 0;
 			}
-			myStats->HP *= 3;
-			myStats->MAXHP *= 3;
-			myStats->OLDHP = myStats->HP;
-			myStats->LVL = 15;
-			newItem( GEM_GARNET, EXCELLENT, 0, 1, rand(), FALSE, &myStats->inventory );
+
+			bool lesserMonster = false;
+			if ( !strncmp(myStats->name, "enslaved ghoul", strlen("enslaved ghoul")) )
+			{
+				if ( !strncmp(map.name, "Bram's Castle", 13) )
+				{
+				}
+				else
+				{
+					myStats->HP = 110;
+					myStats->MAXHP = myStats->HP;
+					myStats->OLDHP = myStats->HP;
+					myStats->STR = 13;
+					myStats->DEX = 5;
+					if ( !strncmp(map.name, "The Haunted Castle", 18) )
+					{
+						myStats->LVL = 10;
+					}
+					else
+					{
+						myStats->LVL = 15;
+					}
+					myStats->PER = 10;
+					if ( rand() % 2 == 0 )
+					{
+						myStats->EFFECTS[EFF_VAMPIRICAURA] = true;
+						myStats->EFFECTS_TIMERS[EFF_VAMPIRICAURA] = -1;
+					}
+				}
+			}
+
+
+			// apply random stat increases if set in stat_shared.cpp or editor
+			setRandomMonsterStats(myStats);
+
+			// generate 6 items max, less if there are any forced items from boss variants
+			int customItemsToGenerate = ITEM_CUSTOM_SLOT_LIMIT;
+
+			// boss variants
+			if ( rand() % 50 || my->flags[USERFLAG2] || myStats->MISC_FLAGS[STAT_FLAG_DISABLE_MINIBOSS] )
+			{
+				if ( !strncmp(map.name, "Bram's Castle", 13) )
+				{
+					myStats->EFFECTS[EFF_VAMPIRICAURA] = true;
+					myStats->EFFECTS_TIMERS[EFF_VAMPIRICAURA] = -1;
+				}
+			}
+			else if ( !lesserMonster )
+			{
+				strcpy(myStats->name, "Coral Grimes");
+				for ( c = 0; c < 3; c++ )
+				{
+					Entity* entity = summonMonster(GHOUL, my->x, my->y);
+					if ( entity )
+					{
+						entity->parent = my->getUID();
+					}
+				}
+				myStats->HP *= 3;
+				myStats->MAXHP *= 3;
+				myStats->OLDHP = myStats->HP;
+				myStats->LVL = 15;
+				myStats->DEX = 2;
+				myStats->STR = 13;
+				newItem(GEM_GARNET, EXCELLENT, 0, 1, rand(), false, &myStats->inventory);
+				customItemsToGenerate -= 1;
+			}
+
+			// random effects
+
+			// generates equipment and weapons if available from editor
+			createMonsterEquipment(myStats);
+
+			// create any custom inventory items from editor if available
+			createCustomInventory(myStats, customItemsToGenerate);
+
+			// count if any custom inventory items from editor
+			// max limit of 6 custom items per entity.
+			int customItems = countCustomItems(myStats);
+
+			// count any inventory items set to default in edtior
+			int defaultItems = countDefaultItems(myStats);
+
+			my->setHardcoreStats(*myStats);
+
+			// generate the default inventory items for the monster, provided the editor sprite allowed enough default slots
+			switch ( defaultItems )
+			{
+				case 6:
+				case 5:
+				case 4:
+				case 3:
+					if ( rand() % 20 == 0 )
+					{
+						newItem(POTION_WATER, SERVICABLE, 2, 1, rand(), false, &myStats->inventory);
+					}
+				case 2:
+					if ( rand() % 10 == 0 )
+					{
+						newItem(itemLevelCurve(TOOL, 0, currentlevel), DECREPIT, 1, 1, rand(), false, &myStats->inventory);
+					}
+				case 1:
+					if ( rand() % 4 == 0 )
+					{
+						newItem(FOOD_MEAT, DECREPIT, -1, 1, rand(), false, &myStats->inventory);
+					}
+					break;
+				default:
+					break;
+			}
 		}
-	
-		if( rand()%20==0 )
-			newItem( POTION_WATER, SERVICABLE, 2, 1, rand(), FALSE, &myStats->inventory );
-		if( rand()%10==0 )
-			newItem( itemCurve(TOOL), DECREPIT, 1, 1, rand(), FALSE, &myStats->inventory );
-		if( rand()%4==0 )
-			newItem( FOOD_MEAT, DECREPIT, -1, 1, rand(), FALSE, &myStats->inventory );
 	}
 
 	// torso
-	Entity *entity = newEntity(247, 0, map.entities);
+	Entity* entity = newEntity(247, 0, map.entities, nullptr); //Limb entity.
 	entity->sizex = 4;
 	entity->sizey = 4;
-	entity->skill[2] = my->uid;
-	entity->flags[PASSABLE]=TRUE;
-	entity->flags[NOUPDATE]=TRUE;
-	entity->flags[USERFLAG2]=my->flags[USERFLAG2];
+	entity->skill[2] = my->getUID();
+	entity->flags[PASSABLE] = true;
+	entity->flags[NOUPDATE] = true;
+	entity->flags[USERFLAG2] = my->flags[USERFLAG2];
 	entity->focalx = limbs[GHOUL][1][0]; // 0
 	entity->focaly = limbs[GHOUL][1][1]; // 0
 	entity->focalz = limbs[GHOUL][1][2]; // 0
-	entity->behavior=&actGhoulLimb;
-	entity->parent=my->uid;
+	entity->behavior = &actGhoulLimb;
+	entity->parent = my->getUID();
 	node = list_AddNodeLast(&my->children);
 	node->element = entity;
 	node->deconstructor = &emptyDeconstructor;
-	node->size = sizeof(Entity *);
+	node->size = sizeof(Entity*);
+	my->bodyparts.push_back(entity);
 
 	// right leg
-	entity = newEntity(251, 0, map.entities);
+	entity = newEntity(251, 0, map.entities, nullptr); //Limb entity.
 	entity->sizex = 4;
 	entity->sizey = 4;
-	entity->skill[2] = my->uid;
-	entity->flags[PASSABLE]=TRUE;
-	entity->flags[NOUPDATE]=TRUE;
-	entity->flags[USERFLAG2]=my->flags[USERFLAG2];
+	entity->skill[2] = my->getUID();
+	entity->flags[PASSABLE] = true;
+	entity->flags[NOUPDATE] = true;
+	entity->flags[USERFLAG2] = my->flags[USERFLAG2];
 	entity->focalx = limbs[GHOUL][2][0]; // 1
 	entity->focaly = limbs[GHOUL][2][1]; // 0
 	entity->focalz = limbs[GHOUL][2][2]; // 2
-	entity->behavior=&actGhoulLimb;
-	entity->parent=my->uid;
+	entity->behavior = &actGhoulLimb;
+	entity->parent = my->getUID();
 	node = list_AddNodeLast(&my->children);
 	node->element = entity;
 	node->deconstructor = &emptyDeconstructor;
-	node->size = sizeof(Entity *);
+	node->size = sizeof(Entity*);
+	my->bodyparts.push_back(entity);
 
 	// left leg
-	entity = newEntity(250, 0, map.entities);
+	entity = newEntity(250, 0, map.entities, nullptr); //Limb entity.
 	entity->sizex = 4;
 	entity->sizey = 4;
-	entity->skill[2] = my->uid;
-	entity->flags[PASSABLE]=TRUE;
-	entity->flags[NOUPDATE]=TRUE;
-	entity->flags[USERFLAG2]=my->flags[USERFLAG2];
+	entity->skill[2] = my->getUID();
+	entity->flags[PASSABLE] = true;
+	entity->flags[NOUPDATE] = true;
+	entity->flags[USERFLAG2] = my->flags[USERFLAG2];
 	entity->focalx = limbs[GHOUL][3][0]; // 1
 	entity->focaly = limbs[GHOUL][3][1]; // 0
 	entity->focalz = limbs[GHOUL][3][2]; // 2
-	entity->behavior=&actGhoulLimb;
-	entity->parent=my->uid;
+	entity->behavior = &actGhoulLimb;
+	entity->parent = my->getUID();
 	node = list_AddNodeLast(&my->children);
 	node->element = entity;
 	node->deconstructor = &emptyDeconstructor;
-	node->size = sizeof(Entity *);
+	node->size = sizeof(Entity*);
+	my->bodyparts.push_back(entity);
 
 	// right arm
-	entity = newEntity(249, 0, map.entities);
+	entity = newEntity(249, 0, map.entities, nullptr); //Limb entity.
 	entity->sizex = 4;
 	entity->sizey = 4;
-	entity->skill[2] = my->uid;
-	entity->flags[PASSABLE]=TRUE;
-	entity->flags[NOUPDATE]=TRUE;
-	entity->flags[USERFLAG2]=my->flags[USERFLAG2];
+	entity->skill[2] = my->getUID();
+	entity->flags[PASSABLE] = true;
+	entity->flags[NOUPDATE] = true;
+	entity->flags[USERFLAG2] = my->flags[USERFLAG2];
 	entity->focalx = limbs[GHOUL][4][0]; // -.25
 	entity->focaly = limbs[GHOUL][4][1]; // 0
 	entity->focalz = limbs[GHOUL][4][2]; // 3
-	entity->behavior=&actGhoulLimb;
-	entity->parent=my->uid;
+	entity->behavior = &actGhoulLimb;
+	entity->parent = my->getUID();
 	node = list_AddNodeLast(&my->children);
 	node->element = entity;
 	node->deconstructor = &emptyDeconstructor;
-	node->size = sizeof(Entity *);
+	node->size = sizeof(Entity*);
+	my->bodyparts.push_back(entity);
 
 	// left arm
-	entity = newEntity(248, 0, map.entities);
+	entity = newEntity(248, 0, map.entities, nullptr); //Limb entity.
 	entity->sizex = 4;
 	entity->sizey = 4;
-	entity->skill[2] = my->uid;
-	entity->flags[PASSABLE]=TRUE;
-	entity->flags[NOUPDATE]=TRUE;
-	entity->flags[USERFLAG2]=my->flags[USERFLAG2];
+	entity->skill[2] = my->getUID();
+	entity->flags[PASSABLE] = true;
+	entity->flags[NOUPDATE] = true;
+	entity->flags[USERFLAG2] = my->flags[USERFLAG2];
 	entity->focalx = limbs[GHOUL][5][0]; // -.25
 	entity->focaly = limbs[GHOUL][5][1]; // 0
 	entity->focalz = limbs[GHOUL][5][2]; // 3
-	entity->behavior=&actGhoulLimb;
-	entity->parent=my->uid;
+	entity->behavior = &actGhoulLimb;
+	entity->parent = my->getUID();
 	node = list_AddNodeLast(&my->children);
 	node->element = entity;
 	node->deconstructor = &emptyDeconstructor;
-	node->size = sizeof(Entity *);
+	node->size = sizeof(Entity*);
+	my->bodyparts.push_back(entity);
 }
 
-void actGhoulLimb(Entity *my) {
-	int i;
-	
-	Entity *parent = NULL;
-	if( (parent=uidToEntity(my->skill[2]))==NULL ) {
-		list_RemoveNode(my->mynode);
-		return;
-	}
-	
-	if( multiplayer!=CLIENT ) {
-		for( i=0; i<MAXPLAYERS; i++ ) {
-			if( inrange[i] ) {
-				if( i==0 && selectedEntity==my ) {
-					parent->skill[13] = i+1;
-				}
-				else if( client_selected[i]==my ) {
-					parent->skill[13] = i+1;
-				}
-			}
-		}
-	}
-	return;
+void actGhoulLimb(Entity* my)
+{
+	my->actMonsterLimb();
 }
 
-void ghoulDie(Entity *my) {
-	node_t *node, *nextnode;
+void ghoulDie(Entity* my)
+{
 	int c;
-	for( c=0; c<10; c++ ) {
-		Entity *entity = spawnGib(my);
-		if( entity ) {
-			if( c<6 )
-				entity->sprite = 246+c;
+	for ( c = 0; c < 10; c++ )
+	{
+		Entity* entity = spawnGib(my);
+		if ( entity )
+		{
+			if ( c < 6 )
+			{
+				entity->sprite = 246 + c;
+			}
 			serverSpawnGibForClient(entity);
 		}
 	}
-	if (spawn_blood) {
-		int x, y;
-		x = std::min<unsigned int>(std::max<int>(0,my->x/16),map.width-1);
-		y = std::min<unsigned int>(std::max<int>(0,my->y/16),map.height-1);
-		if( map.tiles[y*MAPLAYERS+x*MAPLAYERS*map.height] ) {
-			if( !checkObstacle(my->x,my->y,my,NULL) ) {
-				Entity *entity = newEntity(212,1,map.entities);
-				entity->x = my->x;
-				entity->y = my->y;
-				entity->z = 7.4+(rand()%20)/100.f;
-				entity->parent = my->uid;
-				entity->sizex = 2;
-				entity->sizey = 2;
-				entity->yaw = (rand()%360)*PI/180.0;
-				entity->flags[UPDATENEEDED] = TRUE;
-				entity->flags[PASSABLE] = TRUE;
-			}
-		}
-	}
-	int i = 0;
-	for (node=my->children.first; node!=NULL; node=nextnode) {
-		nextnode=node->next;
-		if (node->element != NULL && i >= 2) {
-			Entity *entity=(Entity *)node->element;
-			entity->flags[UPDATENEEDED]=FALSE;
-			list_RemoveNode(entity->mynode);
-		}
-		list_RemoveNode(node);
-		++i;
-	}
+
+	my->spawnBlood(212);
+
+	my->removeMonsterDeathNodes();
+
 	playSoundEntity(my, 145, 128);
 	list_RemoveNode(my->mynode);
 	return;
@@ -261,49 +283,63 @@ void ghoulDie(Entity *my) {
 
 #define GHOULWALKSPEED .125
 
-void ghoulMoveBodyparts(Entity *my, Stat *myStats, double dist) {
-	node_t *node;
-	Entity *entity = NULL;
-	Entity *rightbody = NULL;
+void ghoulMoveBodyparts(Entity* my, Stat* myStats, double dist)
+{
+	node_t* node;
+	Entity* entity = nullptr;
+	Entity* rightbody = nullptr;
 	int bodypart;
-	
-	// set invisibility
-	if( multiplayer != CLIENT ) {
-		if( myStats->EFFECTS[EFF_INVISIBLE] == TRUE ) {
-			my->flags[INVISIBLE] = TRUE;
-			my->flags[BLOCKSIGHT] = FALSE;
-			bodypart=0;
-			for(node = my->children.first; node!=NULL; node=node->next) {
-				if( bodypart<2 ) {
+
+	// set invisibility //TODO: isInvisible()?
+	if ( multiplayer != CLIENT )
+	{
+		if ( myStats->EFFECTS[EFF_INVISIBLE] == true )
+		{
+			my->flags[INVISIBLE] = true;
+			my->flags[BLOCKSIGHT] = false;
+			bodypart = 0;
+			for (node = my->children.first; node != nullptr; node = node->next)
+			{
+				if ( bodypart < LIMB_HUMANOID_TORSO )
+				{
 					bodypart++;
 					continue;
 				}
-				if( bodypart>=7 ) {
+				if ( bodypart >= 7 )
+				{
 					break;
 				}
-				entity = (Entity *)node->element;
-				if( !entity->flags[INVISIBLE] ) {
-					entity->flags[INVISIBLE] = TRUE;
-					serverUpdateEntityBodypart(my,bodypart);
+				entity = (Entity*)node->element;
+				if ( !entity->flags[INVISIBLE] )
+				{
+					entity->flags[INVISIBLE] = true;
+					serverUpdateEntityBodypart(my, bodypart);
 				}
 				bodypart++;
 			}
-		} else {
-			my->flags[INVISIBLE] = FALSE;
-			my->flags[BLOCKSIGHT] = TRUE;
-			bodypart=0;
-			for(node = my->children.first; node!=NULL; node=node->next) {
-				if( bodypart<2 ) {
+		}
+		else
+		{
+			my->flags[INVISIBLE] = false;
+			my->flags[BLOCKSIGHT] = true;
+			bodypart = 0;
+			for (node = my->children.first; node != nullptr; node = node->next)
+			{
+				if ( bodypart < LIMB_HUMANOID_TORSO )
+				{
 					bodypart++;
 					continue;
 				}
-				if( bodypart>=7 ) {
+				if ( bodypart >= 7 )
+				{
 					break;
 				}
-				entity = (Entity *)node->element;
-				if( entity->flags[INVISIBLE] ) {
-					entity->flags[INVISIBLE] = FALSE;
-					serverUpdateEntityBodypart(my,bodypart);
+				entity = (Entity*)node->element;
+				if ( entity->flags[INVISIBLE] )
+				{
+					entity->flags[INVISIBLE] = false;
+					serverUpdateEntityBodypart(my, bodypart);
+					serverUpdateEntityFlag(my, INVISIBLE);
 				}
 				bodypart++;
 			}
@@ -313,161 +349,252 @@ void ghoulMoveBodyparts(Entity *my, Stat *myStats, double dist) {
 	//Move bodyparts
 	my->x -= cos(my->yaw);
 	my->y -= sin(my->yaw);
-	for(bodypart=0, node = my->children.first; node!=NULL; node=node->next, bodypart++) {
-		if( bodypart<2 ) {
+	for (bodypart = 0, node = my->children.first; node != nullptr; node = node->next, bodypart++)
+	{
+		if ( bodypart < LIMB_HUMANOID_TORSO )
+		{
 			continue;
 		}
-		entity = (Entity *)node->element;
+		entity = (Entity*)node->element;
 		entity->x = my->x;
 		entity->y = my->y;
 		entity->z = my->z;
 		entity->yaw = my->yaw;
-		if( bodypart==3||bodypart==6 ) {
-			if( bodypart==3 )
-				rightbody = (Entity *)node->next->element;
-			if( bodypart==6 ) {
-				if( MONSTER_ATTACK ) {
-					// vertical chop
-					if( MONSTER_ATTACKTIME == 0 ) {
-						MONSTER_ARMBENDED = 0;
-						MONSTER_WEAPONYAW = 0;
-						entity->pitch = -3*PI/4;
-						entity->roll = 0;
-					} else {
-						if( entity->pitch >= -PI/2 )
-							MONSTER_ARMBENDED = 1;
-						if( entity->pitch >= PI/4 ) {
-							entity->skill[0] = 0;
-							MONSTER_ARMBENDED = 0;
-							MONSTER_ATTACK = 0;
-						} else {
-							entity->pitch += .25;
+		if ( bodypart == LIMB_HUMANOID_RIGHTLEG || bodypart == LIMB_HUMANOID_LEFTARM )
+		{
+			if ( bodypart == LIMB_HUMANOID_RIGHTLEG )
+			{
+				rightbody = (Entity*)node->next->element;
+			}
+			if ( bodypart == LIMB_HUMANOID_LEFTARM )
+			{
+				if ( my->monsterAttack > 0 )
+				{
+					// vertical chop windup
+					if ( my->monsterAttack == MONSTER_POSE_MELEE_WINDUP1 )
+					{
+						if ( my->monsterAttackTime == 0 )
+						{
+							// init rotations
+							entity->pitch = 0;
+							my->monsterArmbended = 0;
+							//my->monsterWeaponYaw = 0; // keep the arms outstretched.
+							entity->roll = 0;
+							entity->skill[1] = 0;
+						}
+
+						limbAnimateToLimit(entity, ANIMATE_PITCH, -0.25, 5 * PI / 4, false, 0.0);
+
+						if ( my->monsterAttackTime >= ANIMATE_DURATION_WINDUP / (monsterGlobalAnimationMultiplier / 10.0) )
+						{
+							if ( multiplayer != CLIENT )
+							{
+								my->attack(1, 0, nullptr);
+							}
 						}
 					}
-				} else {
-					MONSTER_WEAPONYAW = -PI/16.0;
-					entity->pitch = -7*PI/16;
-					entity->roll = 0;
+					// vertical chop attack
+					else if ( my->monsterAttack == 1 )
+					{
+						my->monsterWeaponYaw = 0;
+						if ( entity->pitch >= 3 * PI / 2 )
+						{
+							my->monsterArmbended = 1;
+						}
+
+						if ( entity->skill[1] == 0 )
+						{
+							// chop forwards
+							if ( limbAnimateToLimit(entity, ANIMATE_PITCH, 0.4, PI / 3, false, 0.0) )
+							{
+								entity->skill[1] = 1;
+							}
+						}
+						else if ( entity->skill[1] == 1 )
+						{
+							my->monsterWeaponYaw = -PI / 16.0;
+							// return to neutral
+							if ( limbAnimateToLimit(entity, ANIMATE_PITCH, -0.25, 25 * PI / 16, false, 0.0) )
+							{
+								entity->skill[0] = rightbody->skill[0];
+								entity->pitch = rightbody->pitch;
+								entity->roll = 0;
+								my->monsterArmbended = 0;
+								my->monsterAttack = 0;
+							}
+						}
+					}
 				}
-			} else {
-				if( dist>0.1 ) {
-					if( !rightbody->skill[0] ) {
-						entity->pitch -= dist*GHOULWALKSPEED;
-						if( entity->pitch < -PI/4.0 ) {
-							entity->pitch = -PI/4.0;
-						}
-					} else {
-						entity->pitch += dist*GHOULWALKSPEED;
-						if( entity->pitch > PI/4.0 ) {
-							entity->pitch = PI/4.0;
-						}
-					}
-				} else {
-					if( entity->pitch < 0 ) {
-						entity->pitch += 1/fmax(dist*.1,10.0);
-						if( entity->pitch > 0 )
-							entity->pitch=0;
-					} else if( entity->pitch > 0 ) {
-						entity->pitch -= 1/fmax(dist*.1,10.0);
-						if( entity->pitch < 0 )
-							entity->pitch=0;
-					}
+				else
+				{
+					my->monsterWeaponYaw = -PI / 16.0;
+					entity->pitch = -7 * PI / 16;
+					entity->roll = 0;
 				}
 			}
-		} else if( bodypart==4||bodypart==5 ) {
-			if( bodypart==5 ) {
-				if( MONSTER_ATTACK ) {
-					// vertical chop
-					if( MONSTER_ATTACKTIME == 0 ) {
-						MONSTER_ARMBENDED = 0;
-						MONSTER_WEAPONYAW = 0;
-						entity->pitch = -3*PI/4;
-						entity->roll = 0;
-					} else {
-						if( entity->pitch >= -PI/2 )
-							MONSTER_ARMBENDED = 1;
-						if( entity->pitch >= PI/4 ) {
-							entity->skill[0] = 0;
-						} else {
-							entity->pitch += .25;
+			else
+			{
+				if ( dist > 0.1 )
+				{
+					if ( !rightbody->skill[0] )
+					{
+						entity->pitch -= dist * GHOULWALKSPEED;
+						if ( entity->pitch < -PI / 4.0 )
+						{
+							entity->pitch = -PI / 4.0;
 						}
 					}
-				} else {
-					MONSTER_WEAPONYAW = -PI/16.0;
-					entity->pitch = -7*PI/16;
-					entity->roll = 0;
+					else
+					{
+						entity->pitch += dist * GHOULWALKSPEED;
+						if ( entity->pitch > PI / 4.0 )
+						{
+							entity->pitch = PI / 4.0;
+						}
+					}
 				}
-			} else {
-				if( dist>0.1 ) {
-					if( entity->skill[0] ) {
-						entity->pitch -= dist*GHOULWALKSPEED*.5;
-						if( entity->pitch < -PI/8.0 ) {
-							entity->skill[0]=0;
-							entity->pitch = -PI/8.0;
-						}
-					} else {
-						entity->pitch += dist*GHOULWALKSPEED*.5;
-						if( entity->pitch > PI/8.0 ) {
-							entity->skill[0]=1;
-							entity->pitch = PI/8.0;
+				else
+				{
+					if ( entity->pitch < 0 )
+					{
+						entity->pitch += 1 / fmax(dist * .1, 10.0);
+						if ( entity->pitch > 0 )
+						{
+							entity->pitch = 0;
 						}
 					}
-				} else {
-					if( entity->pitch < 0 ) {
-						entity->pitch += (1/fmax(dist*.1,10.0))*.5;
-						if( entity->pitch > 0 )
-							entity->pitch=0;
-					} else if( entity->pitch > 0 ) {
-						entity->pitch -= (1/fmax(dist*.1,10.0))*.5;
-						if( entity->pitch < 0 )
-							entity->pitch=0;
+					else if ( entity->pitch > 0 )
+					{
+						entity->pitch -= 1 / fmax(dist * .1, 10.0);
+						if ( entity->pitch < 0 )
+						{
+							entity->pitch = 0;
+						}
 					}
 				}
 			}
 		}
-		switch( bodypart ) {
+		else if ( bodypart == LIMB_HUMANOID_LEFTLEG || bodypart == LIMB_HUMANOID_RIGHTARM )
+		{
+			if ( bodypart == LIMB_HUMANOID_RIGHTARM )
+			{
+				if ( my->monsterAttack > 0 )
+				{
+					 //vertical chop
+					 //get leftarm from bodypart 6 element if ready to attack
+					Entity* leftarm = (Entity*)node->next->element;
+					if ( my->monsterAttack == 1 || my->monsterAttack == MONSTER_POSE_MELEE_WINDUP1 )
+					{
+						if ( leftarm != nullptr )
+						{
+							// follow the right arm animation.
+							entity->pitch = leftarm->pitch;
+							entity->roll = -leftarm->roll;
+						}
+					}
+				}
+				else
+				{
+					entity->pitch = -7 * PI / 16;
+					entity->roll = 0;
+				}
+			}
+			else
+			{
+				if ( dist > 0.1 )
+				{
+					if ( entity->skill[0] )
+					{
+						entity->pitch -= dist * GHOULWALKSPEED * .5;
+						if ( entity->pitch < -PI / 8.0 )
+						{
+							entity->skill[0] = 0;
+							entity->pitch = -PI / 8.0;
+						}
+					}
+					else
+					{
+						entity->pitch += dist * GHOULWALKSPEED * .5;
+						if ( entity->pitch > PI / 8.0 )
+						{
+							entity->skill[0] = 1;
+							entity->pitch = PI / 8.0;
+						}
+					}
+				}
+				else
+				{
+					if ( entity->pitch < 0 )
+					{
+						entity->pitch += (1 / fmax(dist * .1, 10.0)) * .5;
+						if ( entity->pitch > 0 )
+						{
+							entity->pitch = 0;
+						}
+					}
+					else if ( entity->pitch > 0 )
+					{
+						entity->pitch -= (1 / fmax(dist * .1, 10.0)) * .5;
+						if ( entity->pitch < 0 )
+						{
+							entity->pitch = 0;
+						}
+					}
+				}
+			}
+		}
+		switch ( bodypart )
+		{
 			// torso
-			case 2:
-				entity->x+=.5*cos(my->yaw);
-				entity->y+=.5*sin(my->yaw);
-				entity->z+=1.5;
-				entity->pitch = PI/16;
+			case LIMB_HUMANOID_TORSO:
+				entity->x += .5 * cos(my->yaw);
+				entity->y += .5 * sin(my->yaw);
+				entity->z += 1.5;
+				entity->pitch = PI / 16;
 				break;
 			// right leg
-			case 3:
-				entity->x-=.5*cos(my->yaw)-1*cos(my->yaw+PI/2);
-				entity->y-=.5*sin(my->yaw)-1*sin(my->yaw+PI/2);
-				entity->z+=4;
-				entity->yaw += PI/16;
+			case LIMB_HUMANOID_RIGHTLEG:
+				entity->x -= .5 * cos(my->yaw) - 1 * cos(my->yaw + PI / 2);
+				entity->y -= .5 * sin(my->yaw) - 1 * sin(my->yaw + PI / 2);
+				entity->z += 4;
+				entity->yaw += PI / 16;
 				break;
 			// left leg
-			case 4:
-				entity->x-=.5*cos(my->yaw)+1*cos(my->yaw+PI/2);
-				entity->y-=.5*sin(my->yaw)+1*sin(my->yaw+PI/2);
-				entity->z+=4;
-				entity->yaw -= PI/4;
-				entity->roll = PI/8;
+			case LIMB_HUMANOID_LEFTLEG:
+				entity->x -= .5 * cos(my->yaw) + 1 * cos(my->yaw + PI / 2);
+				entity->y -= .5 * sin(my->yaw) + 1 * sin(my->yaw + PI / 2);
+				entity->z += 4;
+				entity->yaw -= PI / 4;
+				entity->roll = PI / 8;
 				break;
 			// right arm
-			case 5:
-				entity->x+=1*cos(my->yaw)+2*cos(my->yaw+PI/2);
-				entity->y+=1*sin(my->yaw)+2*sin(my->yaw+PI/2);
-				entity->z-=1;
-				entity->yaw -= MONSTER_WEAPONYAW;
+			case LIMB_HUMANOID_RIGHTARM:
+				entity->x += 1 * cos(my->yaw) + 2 * cos(my->yaw + PI / 2);
+				entity->y += 1 * sin(my->yaw) + 2 * sin(my->yaw + PI / 2);
+				entity->z -= 1;
+				entity->yaw -= my->monsterWeaponYaw;
 				break;
 			// left arm
-			case 6:
-				entity->x+=1*cos(my->yaw)-2*cos(my->yaw+PI/2);
-				entity->y+=1*sin(my->yaw)-2*sin(my->yaw+PI/2);
-				entity->z-=1;
-				entity->yaw += MONSTER_WEAPONYAW;
+			case LIMB_HUMANOID_LEFTARM:
+				entity->x += 1 * cos(my->yaw) - 2 * cos(my->yaw + PI / 2);
+				entity->y += 1 * sin(my->yaw) - 2 * sin(my->yaw + PI / 2);
+				entity->z -= 1;
+				entity->yaw += my->monsterWeaponYaw;
 				break;
 		}
 	}
-	if( MONSTER_ATTACK != 0 )
+	if ( MONSTER_ATTACK > 0 && MONSTER_ATTACK <= MONSTER_POSE_MAGIC_CAST3 )
+	{
 		MONSTER_ATTACKTIME++;
+	}
+	else if ( MONSTER_ATTACK == 0 )
+	{
+		MONSTER_ATTACKTIME = 0;
+	}
 	else
-		MONSTER_ATTACKTIME=0;
+	{
+		// do nothing, don't reset attacktime or increment it.
+	}
 	my->x += cos(my->yaw);
 	my->y += sin(my->yaw);
 }

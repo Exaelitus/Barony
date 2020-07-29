@@ -11,8 +11,28 @@
 	#define LINUX
 #endif
 
+#if @Bsd@
+	#define BSD
+#endif
+
 #if @STEAMWORKS_ENABLED@
 	#define STEAMWORKS
+#endif
+
+#if @FMOD@
+	#define USE_FMOD
+#endif
+
+#if @OPENAL@
+	#define USE_OPENAL
+#endif
+
+#if @TREMOR@
+	#define USE_TREMOR
+#endif
+
+#if @PANDORA@
+	#define PANDORA
 #endif
 
 #if @NOT_DWORD_DEFINED@

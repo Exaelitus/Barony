@@ -17,18 +17,33 @@
 
 #define NUMCHITCHAT 20
 
-extern list_t *shopInv;
+extern list_t* shopInv;
 extern Uint32 shopkeeper;
 extern Uint32 shoptimer;
-extern char *shopspeech;
+extern char* shopspeech;
 extern int shopinventorycategory;
 extern int shopitemscroll;
-extern Item *shopinvitems[4];
-extern Item *sellitem;
+extern Item* shopinvitems[4];
+extern Item* sellitem;
 extern int shopkeepertype;
-extern char *shopkeepername;
+extern char* shopkeepername;
 extern char shopkeepername_client[64];
 
-void startTradingServer(Entity *entity, int player);
-void buyItemFromShop(Item *item);
-void sellItemToShop(Item *item);
+void startTradingServer(Entity* entity, int player);
+void buyItemFromShop(Item* item);
+void sellItemToShop(Item* item);
+bool shopIsMysteriousShopkeeper(Entity* entity);
+extern int selectedShopSlot;
+extern std::unordered_map<int, std::unordered_set<int>> shopkeeperMysteriousItems;
+void buyItemFromMysteriousShopkeepConsumeOrb(Entity& entity, Item& boughtItem);
+void selectShopSlot(int slot);
+void warpMouseToSelectedShopSlot();
+
+/*
+ * Negative: Left.
+ * Positive: Right.
+ */
+void cycleShopCategories(int direction);
+
+static const int NUM_SHOP_CATEGORIES = 8;
+static const int NUM_SHOP_GUI_SLOTS = 4;
